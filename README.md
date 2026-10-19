@@ -1,7 +1,6 @@
 # Glaucoma-Classification-Project (GRAFT)
 
 Glaucoma detection on the **Harvard-GF** dataset with **attention fusion**, **uncertainty / calibration**, and **fairness** analysis.
-CS 536 Machine Learning II, Rutgers.
 
 The goal is not only to classify glaucoma vs. no glaucoma, but also to answer:
 
