@@ -36,8 +36,6 @@ hf download harvardairobotics/Harvard-GF --repo-type dataset --local-dir data/ra
 
 Then unzip `dataset.zip` inside `data/raw/harvard_gf/` so the files sit in `Dataset/Training/`, `Dataset/Validation/`, `Dataset/Test/`.
 
-> The data is **not** in this repo (≈48 GB). Every teammate downloads it and runs the preprocessing script below.
-
 ---
 
 ## Rules every model must follow
@@ -62,8 +60,6 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
-
-On Apple Silicon, PyTorch can use the GPU via the `mps` device.
 
 ---
 
