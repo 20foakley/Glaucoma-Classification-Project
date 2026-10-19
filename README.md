@@ -71,11 +71,11 @@ Run from the repo root.
 |---|---|---|
 | 1. Inspect raw files | `python scripts/inspect_data.py` | Keys, shapes, dtypes, CSV summary |
 | 2. Visualize OCT axes | `python scripts/view_oct.py` | `results/oct_axes.png`, `results/oct_mean_projections.png` |
-| 3. Preprocess (≈40 s) | `python scripts/preprocess.py` | `data/processed/` (see below) |
+| 3. Preprocess (≈40 s) | `python scripts/preprocess.py` | `data/processed/` |
 | 4. Check RNFLT values | `python scripts/check_rnflt.py` | Percentiles, `results/rnflt_negative_codes.png` |
-| 5. Cup-to-disc ratio | `python scripts/compute_cdr.py` | *Not run yet* |
+| 5. Cup-to-disc ratio | `python scripts/compute_cdr.py` |  |
 
-### Processed files (`data/processed/`, ≈3 GB)
+### Processed files (`data/processed/`)
 
 | File | Shape | Content |
 |---|---|---|
@@ -86,14 +86,6 @@ Run from the repo root.
 | `meta.csv` | 3300 rows | Demographics, `md`, `label`, `split` (`train` / `val` / `test`) |
 
 Rows are in the same order in every file.
-
-### RNFLT cleaning
-
-- Values `-1` and `-2` are not thicknesses but special codes covering the optic disc (likely `-1` = rim, `-2` = cup; to be confirmed by `compute_cdr.py`). They are set to 0 after normalization and kept as `disc_mask` / `rim_mask`.
-- Values above 400 µm (≈0.26% of pixels, scanner errors) are clipped to 400.
-- Then `(x - mean) / std` with training-set statistics.
-
----
 
 ## Repository layout
 
