@@ -1,0 +1,13 @@
+torch
+torchvision
+timm
+peft
+huggingface_hub
+datasets
+numpy
+pandas
+scikit-learn
+matplotlib
+umap-learn
+pyyaml
+tqdm
