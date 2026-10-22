@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 
 # Data: 48 GB raw + processed; each teammate downloads Harvard-GF and runs scripts/preprocess.py
-/data/
+data/
 
 # Model weights and checkpoints (RETFound, trained models)
 /weights/
