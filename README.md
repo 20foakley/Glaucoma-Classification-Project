@@ -50,18 +50,6 @@ Then unzip `dataset.zip` inside `data/raw/harvard_gf/` so the files sit in `Data
 
 ---
 
-## Setup
-
-Python 3.11 (the macOS system Python 3.9 is too old for current PyTorch).
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
----
-
 ## Pipeline
 
 Run from the repo root. Scripts that import `src` need `PYTHONPATH=.` (or use `python -m scripts.<name>`).
