@@ -44,7 +44,7 @@ Then unzip `dataset.zip` inside `data/raw/harvard_gf/` so the files sit in `Data
 | **Never use `md` or `tds` as model inputs.** | The glaucoma label was defined from the visual field test, so these leak the answer. Use them only for analysis (e.g. mild / moderate / severe groups). |
 | **Never use `race` as a model input.** | It is a shortcut (Black patients have a higher glaucoma rate). Use it only for per-group fairness metrics. |
 | **Use the official split. Touch `test` once, at the end.** | Avoid leakage and overfitting to the test set. |
-| **Compute normalization stats from training data only.** | Same reason. |
+| **Compute normalization stats from training data only.** | Avoid leakage and overfitting to the test set. |
 | **Report AUROC, ECE, and AUROC per race.** | So all models are comparable. Use AUROC (not AUPRC) across races, because glaucoma prevalence differs between groups. |
 | **Train 5 seeds per model (deep ensemble).** | Ensemble disagreement is our uncertainty estimate. |
 
