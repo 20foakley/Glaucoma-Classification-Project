@@ -13,6 +13,7 @@ data/
 *.ckpt
 *.safetensors
 results/checkpoints/
+results/preds/
 
 # Large arrays anywhere in the repo
 *.npy
