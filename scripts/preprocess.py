@@ -1,58 +1,25 @@
-import glob, os
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
+import json, numpy as np, pandas as pd
 
-RAW = "data/raw/harvard_gf"
-OUT = "data/processed"
-AXIS = 0
-N_SLICES = 16
-os.makedirs(OUT, exist_ok=True)
+D = "data/processed"
+CLIP = 400.0
 
-summary = pd.read_csv(f"{RAW}/ReadMe/data_summary.csv")
-paths = {os.path.basename(p): p for p in glob.glob(f"{RAW}/**/*.npz", recursive=True)}
-assert len(paths) == len(summary) == 3300
+rnflt = np.load(f"{D}/rnflt_raw.npy")
+meta = pd.read_csv(f"{D}/meta.csv")
+assert "dev_split" in meta.columns, "run split.py first"
 
-N = len(summary)
-rnflt = np.zeros((N, 200, 200), dtype=np.float32)
-oct_slices = np.zeros((N, N_SLICES, 200, 200), dtype=np.uint8)
-tds = np.zeros((N, 52), dtype=np.float32)
-enface = np.zeros((N, 200, 200), dtype=np.float32)
-extra = []
+# 1. Fixed per-sample cleaning (uses no dataset statistics)
+mask = (rnflt > 0).astype(np.float32)                # -2, -1, 0 -> invalid
+clean = np.clip(np.where(rnflt > 0, rnflt, 0), 0, CLIP)
 
-idx = np.linspace(0, 199, N_SLICES).astype(int)
+# 2. Normalization stats from dev_train valid pixels only
+tr = (meta.dev_split == "dev_train").values
+vals = clean[tr][mask[tr] > 0]
+mu, sd = float(vals.mean()), float(vals.std())
 
-for i, fn in enumerate(tqdm(summary["filename"])):
-    d = np.load(paths[fn], allow_pickle=True)
-    vol = np.moveaxis(d["oct_bscans"], AXIS, 0)
-    oct_slices[i] = vol[idx]
-    rnflt[i] = d["rnflt"]
-    tds[i] = d["tds"]
-    enface[i] = d["oct_bscans"].mean(axis=1) 
-    extra.append({
-        "md": float(d["md"]),
-        "glaucoma_npz": int(d["glaucoma"]),
-        "male": int(d["male"]),
-        "hispanic": int(d["hispanic"]),
-        "language_code": int(d["language"]),
-        "marital_code": int(d["maritalstatus"]),
-    })
+# 3. Apply to every sample; invalid pixels stay 0
+norm = np.where(mask > 0, (clean - mu) / sd, 0).astype(np.float32)
 
-meta = pd.concat([summary, pd.DataFrame(extra)], axis=1)
-meta["label"] = (meta["glaucoma"] == "yes").astype(int)
-meta["split"] = meta["use"].map({"training": "train", "validation": "val", "test": "test"})
-
-# sanity checks
-assert (meta["label"] == meta["glaucoma_npz"]).all(), "CSV and npz labels disagree"
-assert meta["split"].notna().all(), f"unexpected 'use' values: {meta['use'].unique()}"
-
-np.save(f"{OUT}/rnflt.npy", rnflt)
-np.save(f"{OUT}/oct_slices.npy", oct_slices)
-np.save(f"{OUT}/tds.npy", tds)
-np.save(f"{OUT}/oct_enface.npy", enface)  
-meta.to_csv(f"{OUT}/meta.csv", index=False)
-
-print(meta["split"].value_counts())
-print(meta.groupby("split")["label"].mean().round(3))
-print(meta.groupby("race")["label"].mean().round(3))
-print("RNFLT range:", rnflt.min(), rnflt.max())
+np.save(f"{D}/rnflt_norm.npy", norm)
+np.save(f"{D}/rnflt_mask.npy", mask)
+json.dump(dict(mu=mu, sd=sd, clip=CLIP), open(f"{D}/norm_stats.json", "w"))
+print(f"mu={mu:.2f} sd={sd:.2f} norm shape={norm.shape}")

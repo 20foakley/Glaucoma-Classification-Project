@@ -1,139 +1,110 @@
-# Glaucoma-Classification-Project (GRAFT)
+## RNFLT CNN & B-SCAN CNN
 
-Glaucoma detection on the **Harvard-GF** dataset with **attention fusion**, **uncertainty / calibration**, and **fairness** analysis.
+CNN baseline on the 2D RNFLT map (200×200 thickness image) from Harvard-GF.
 
-The goal is not only to classify glaucoma vs. no glaucoma, but also to answer:
-
-1. **Trust** – when the model combines several inputs (RNFLT map, OCT, tabular features), which one does it rely on for each patient?
-2. **Uncertainty** – how sure is the model, and is that confidence honest (calibration, ECE)?
-3. **Fairness** – does it work equally well for Asian, Black, and White patients?
-
----
-
-## Dataset: Harvard-GF
-
-- 3,300 patients, one eye each, one `.npz` file per patient.
-- Official split (from `ReadMe/data_summary.csv`, column `use`): **train 2,100 / val 300 / test 900**.
-- Glaucoma rate ≈ 52% / 59% / 54% (train / val / test), so classes are roughly balanced.
-- No fundus photos. Each file contains:
-
-| Key | Shape | Meaning |
-|---|---|---|
-| `oct_bscans` | (200, 200, 200) uint8 | 3D OCT volume. **B-scans = axis 0, depth = axis 1** |
-| `rnflt` | (200, 200) float | RNFL thickness map (µm) |
-| `md` | scalar | Visual field mean deviation |
-| `tds` | (52,) | Visual field total deviation values |
-| `glaucoma` | scalar | Label (1 = glaucoma) |
-| `race`, `male`, `hispanic`, `language`, `maritalstatus`, `age` | scalar | Demographics |
-
-Download (requires a Hugging Face account and accepting the dataset terms):
-
-```bash
-hf auth login
-hf download harvardairobotics/Harvard-GF --repo-type dataset --local-dir data/raw/harvard_gf
-```
-
-Then unzip `dataset.zip` inside `data/raw/harvard_gf/` so the files sit in `Dataset/Training/`, `Dataset/Validation/`, `Dataset/Test/`.
-
----
-
-## Rules every model must follow
-
-| Rule | Why |
-|---|---|
-| **Never use `md` or `tds` as model inputs.** | The glaucoma label was defined from the visual field test, so these leak the answer. Use them only for analysis (e.g. mild / moderate / severe groups). |
-| **Never use `race` as a model input.** | It is a shortcut (Black patients have a higher glaucoma rate). Use it only for per-group fairness metrics. |
-| **Use the official split. Touch `test` once, at the end.** | Avoid leakage and overfitting to the test set. |
-| **Compute normalization stats from training data only.** | Avoid leakage and overfitting to the test set. |
-| **Report AUROC, ECE, and AUROC per race.** | So all models are comparable. Use AUROC (not AUPRC) across races, because glaucoma prevalence differs between groups. |
-| **Train 5 seeds per model (deep ensemble).** | Ensemble disagreement is our uncertainty estimate. |
-
----
-
-## Pipeline
-
-Run from the repo root. Scripts that import `src` need `PYTHONPATH=.` (or use `python -m scripts.<name>`).
-
-| Step | Command | Output |
-|---|---|---|
-| 1. Inspect raw files | `python scripts/inspect_data.py` | Keys, shapes, dtypes, CSV summary |
-| 2. Visualize OCT axes | `python scripts/view_oct.py` | `results/oct_axes.png`, `results/oct_mean_projections.png` |
-| 3. Preprocess (≈40 s) | `python scripts/preprocess.py` | `data/processed/` arrays + `meta.csv` |
-| 4. Check RNFLT values | `python scripts/check_rnflt.py` | Percentiles, `results/rnflt_negative_codes.png` |
-| 5. Cup-to-disc ratio | `python scripts/compute_cdr.py` | `structural_features.csv` |
-| 6. RNFL features | `python scripts/compute_rnflt_features.py` | `rnflt_features.csv` |
-| 7. Scan quality | `python scripts/compute_quality.py` | `quality.csv` |
-| 8. Test dataset class | `python -m scripts.test_dataset` | Shape checks |
-| 9. Feature baselines | `PYTHONPATH=. python scripts/baseline_features.py` | Val metrics, `results/preds/logreg_seed0_val.csv` |
-
-Steps 5–7 must run before `GFDataset` can be used.
-
-### Processed files (`data/processed/`)
-
-| File | Shape | Content |
-|---|---|---|
-| `rnflt.npy` | (3300, 200, 200) float32 | RNFLT maps (raw values, cleaned at load time) |
-| `oct_slices.npy` | (3300, 16, 200, 200) uint8 | 16 evenly spaced B-scans per patient |
-| `oct_enface.npy` | (3300, 200, 200) float32 | En-face image (OCT averaged over depth) |
-| `tds.npy` | (3300, 52) float32 | Visual field values (**analysis only**) |
-| `meta.csv` | 3300 rows | Demographics, `md`, `label`, `split` (`train` / `val` / `test`) |
-| `structural_features.csv` | 3300 rows | `cup_px`, `disc_px`, `cdr_area`, `vcdr` |
-| `rnflt_features.csv` | 3300 rows | `hcdr`, `rim_px`, RNFL mean/p10, ring thickness (mean, sup, inf, horiz), `si_asym` |
-| `quality.csv` | 3300 rows | `zero_frac`: share of missing RNFLT pixels (**analysis only**) |
-| `rnflt_stats.json`, `tab_stats.json` | — | Normalization stats from train, created on first `GFDataset` use. Delete them if features change. |
-
-RNFLT pixel values: `> 0` thickness (µm), `0` missing, `-1` disc rim, `-2` cup.
-
-Rows are in the same order in every file.
-
-## Using `GFDataset`
-
-```python
-from src.data.dataset import GFDataset, train_augment
-
-train_ds = GFDataset("train", modalities=("rnflt", "tab"),
-                     mask_channels="rim_cup", transform=train_augment)
-val_ds   = GFDataset("val",   modalities=("rnflt", "tab"), mask_channels="rim_cup")
-```
-
-| Option | Values |
-|---|---|
-| `modalities` | any of `rnflt` (C×200×200), `oct` (16×200×200), `enface` (1×200×200), `tab` (12) |
-| `mask_channels` | `none` (C=1), `rim_cup` (C=3), `rim_cup_valid` (C=4) |
-| `transform` | `train_augment` for the train split only |
-
-Each item also returns `label`, `race`, `md`, `zero_frac`, `filename`; `race` and `md` are for analysis, never model input.
-
-## Results (val, n = 300)
-
-| Model | AUROC | ECE | AUROC Asian / Black / White |
-|---|---|---|---|
-| Rule: vCDR | 0.685 | – | – |
-| Rule: RNFL ring mean | 0.731 | – | – |
-| Rule: RNFL inferior ring | 0.765 | – | – |
-| Logistic regression (12 features) | 0.781 | 0.087 | 0.809 / 0.776 / 0.790 |
-| Logistic regression (no age) | 0.784 | 0.098 | 0.790 / 0.773 / 0.801 |
-
-Val AUROC is noisy (±≈0.05); test is evaluated once at the end.
-
-## Repository layout
+### Repository layout (CNN branch)
 
 ```
-GRAFT-Glaucoma/
-├── data/            # NOT in git: raw download + processed arrays
-│   ├── raw/harvard_gf/
+├── data/                  # NOT in git
+│   ├── raw/harvard_gf/    # raw .npz download (Training/, Validation/, Test/)
 │   └── processed/
-├── scripts/         # one-off scripts (inspect, preprocess, checks)
-├── src/
-│   ├── data/dataset.py   # GFDataset: shared PyTorch Dataset
-│   ├── eval/metrics.py   # AUROC, AUPRC, ECE, per-race AUROC
-│   ├── models/           # CNN, MLP, fusion models
-│   └── utils/            # calibration, fairness helpers
-├── configs/         # experiment configs (YAML)
-├── notebooks/       # exploration (clear outputs before committing)
-├── results/         # figures; preds/ (git-ignored) holds per-patient predictions
-├── weights/         # NOT in git: pretrained weights (e.g. RETFound)
-└── requirements.txt
+│       ├── rnflt_raw.npy      (3300, 200, 200) float32, raw values
+│       ├── rnflt_norm.npy     (3300, 200, 200) float32, cleaned + normalized
+│       ├── rnflt_mask.npy     (3300, 200, 200) float32, 1 = valid pixel
+│       ├── meta.csv           one row per patient (split, dev_split, label, race, ...)
+│       └── norm_stats.json    mean, std, clip used for normalization
+├── scripts/
+│   ├── extract.py
+│   ├── verify.py
+│   ├── split.py
+│   ├── preprocess.py
+│   ├── dataset.py
+│   └── train.py
+├── evaluation/            # evaluation code
+├── results/               # metrics, probabilities, figures
+├── requirements.txt
+└── README.md
 ```
 
----
+Rows are in the same order in every file in `data/processed/`.
+
+### Pipeline
+
+Run from the repo root, in order. Each script reads the previous script's output.
+
+| Step | Command | Input | Output |
+|---|---|---|---|
+| 1 | `python scripts/extract.py` | raw `.npz` files | `rnflt_raw.npy`, `meta.csv` |
+| 2 | `python scripts/verify.py` | raw files, step 1 output | PASS/FAIL report |
+| 3 | `python scripts/split.py` | `meta.csv` | `meta.csv` with `dev_split` column |
+| 4 | `python scripts/preprocess.py` | `rnflt_raw.npy`, `meta.csv` | `rnflt_norm.npy`, `rnflt_mask.npy`, `norm_stats.json` |
+| 5 | `python scripts/train.py` | step 4 output | weights, probabilities, metrics in `results/` |
+
+### extract.py
+Reads all 3,300 patient `.npz` files and keeps only the 2D data, skipping the large
+3D `oct_bscans` volume. Saves the RNFLT maps as one array and a metadata table with
+one row per patient: filename, official split (train/val/test), glaucoma label, race,
+sex, age, and md. Race is stored as a string (Asian, Black or African American, White
+or Caucasian) and is used only for per-group fairness metrics. md is for analysis
+only. Neither is a model input.
+
+### verify.py
+Checks that the extraction is complete and correct:
+- 3,300 files, with array and table lengths that match
+- row order matches the raw files
+- no NaN, inf, or null values
+- split sizes of 2,100 / 300 / 900, binary labels, race balanced within each split
+- RNFLT negative values are only the codes -1 and -2
+- every RNFLT map and metadata row is identical to a fresh re-read of its raw file
+
+It prints PASS or FAIL for each check. Do not continue if any check fails.
+
+### split.py
+Divides only the official training rows (2,100) into 80% `dev_train` (1,680) and 20%
+`dev_val` (420), stratified by glaucoma label and race, seed 42. The result is written
+to a new `dev_split` column in `meta.csv`. The official val (300) and test (900) rows
+are unchanged.
+
+| `dev_split` | Rows | Use |
+|---|---|---|
+| `dev_train` | 1,680 | fit the model |
+| `dev_val` | 420 | tuning and early stopping during development |
+| `val` | 300 | official val, spare sanity check |
+| `test` | 900 | official test, used once at the end |
+
+### preprocess.py
+Cleans and normalizes the RNFLT maps:
+- Pixels with values -2, -1, or 0 are set to 0 and recorded in a validity mask. These
+  are placeholder codes, the optic disc, or areas outside the scan.
+- Values are clipped at 400 µm to remove segmentation artifacts (raw max is 1,032 µm).
+- Mean and std are computed on `dev_train` valid pixels only, then applied to all
+  rows. Invalid pixels stay 0.
+
+The stats are saved in `norm_stats.json`.
+
+### dataset.py
+Defines `RNFLTDataset`, a PyTorch Dataset. It selects rows by a split column and
+value, and returns the normalized map (shape `(1, 200, 200)`) and the glaucoma label.
+Options: `use_mask` adds the validity mask as a second channel, and `aug` applies a
+random shift of up to 10 pixels (training only). Race is kept on the object for
+per-group metrics and is never returned as a model input.
+
+### train.py
+Trains a ResNet (18 by default) with a 1-channel input and a single-logit output, using
+BCE loss, AdamW, and a cosine learning-rate schedule. After each epoch it evaluates on
+the eval split and keeps the best epoch by AUROC. It reports AUROC, ECE, and AUROC per
+race, and saves the weights, predicted probabilities (for the 5-seed ensemble), and a
+metrics JSON. Evaluating on `test` requires the `--final` flag.
+
+```
+python scripts/train.py --epochs 30 --aug --seed 0
+```
+
+Other options: `--arch resnet34`, `--pretrained`, `--use_mask`, `--lr`, `--bs`,
+`--out`.
+
+### Rules for this branch
+- Never use `md`, `tds`, or `race` as model inputs (label leakage and shortcut).
+- Compute normalization stats from training data only.
+- Tune on `dev_val`. Touch the official test set once, at the end.
+- Report AUROC, ECE, and AUROC per race, with 5 seeds.
