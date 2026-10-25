@@ -1,0 +1,26 @@
+{
+ "args": {
+  "seed": 0,
+  "epochs": 30,
+  "bs": 32,
+  "lr": 0.0003,
+  "wd": 0.0001,
+  "arch": "resnet18",
+  "pretrained": false,
+  "aug": true,
+  "use_mask": false,
+  "split_col": "dev_split",
+  "train_split": "dev_train",
+  "eval_split": "dev_val",
+  "final": false,
+  "out": "runs"
+ },
+ "best_epoch": 11,
+ "metrics": {
+  "auroc": 0.8589816349231573,
+  "ece": 0.07029642029887152,
+  "auroc_Asian": 0.8882063882063882,
+  "auroc_Black or African American": 0.8436363636363637,
+  "auroc_White or Caucasian": 0.8472563472563472
+ }
+}
