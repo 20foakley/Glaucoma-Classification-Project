@@ -1,0 +1,17 @@
+{
+ "seeds": 5,
+ "per_seed": {
+  "auroc": 0.845533586070691,
+  "ece": 0.0773620587977625,
+  "auroc_Asian": 0.8734643734643734,
+  "auroc_Black or African American": 0.8402566844919785,
+  "auroc_White or Caucasian": 0.8262899262899263
+ },
+ "ensemble": {
+  "auroc": 0.8526707679734852,
+  "ece": 0.05633849210682369,
+  "auroc_Asian": 0.8818591318591318,
+  "auroc_Black or African American": 0.8477005347593582,
+  "auroc_White or Caucasian": 0.828009828009828
+ }
+}

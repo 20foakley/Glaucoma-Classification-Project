@@ -1,36 +1,41 @@
 ## RNFLT CNN & B-SCAN CNN
 
+CNN baseline for glaucoma vs. no glaucoma on the 2D RNFLT map (200×200 thickness
+image) from Harvard-GF. Final result: 5-seed ResNet-18 ensemble, test AUROC 0.846
+(95% CI 0.820 to 0.872), ECE 0.072.
+
 ### Repository layout (CNN branch)
 
 ```
 ├── data/                       # NOT in git
 │   ├── raw/harvard_gf/         # raw .npz download (Training/, Validation/, Test/)
 │   └── processed/
-│       ├── rnflt_raw.npy       (3300, 200, 200) float32, raw values
-│       ├── rnflt_norm.npy      (3300, 200, 200) float32, cleaned + normalized
-│       ├── rnflt_mask.npy      (3300, 200, 200) float32, 1 = valid pixel
-│       ├── meta.csv            one row per patient (split, dev_split, label, race, ...)
-│       └── norm_stats.json     mean, std, clip, and the split they were fit on
+│       ├── rnflt_raw.npy      (3300, 200, 200) float32, raw values
+│       ├── rnflt_norm.npy     (3300, 200, 200) float32, cleaned + normalized
+│       ├── rnflt_mask.npy     (3300, 200, 200) float32, 1 = valid pixel
+│       ├── meta.csv           one row per patient (split, dev_split, label, race, ...)
+│       └── norm_stats.json    mean, std, clip, and the split they were fit on
 ├── scripts/
 │   ├── extract.py
 │   ├── verify.py
 │   ├── split.py
 │   ├── preprocess.py
 │   ├── dataset.py
-│   └── train.py
+│   ├── train.py
+│   └── predict.py
 ├── evaluation/
 │   ├── evaluate.py
 │   └── make_figures.py
 ├── results/                    # run outputs (weights are git-ignored)
-│   ├── runs/  runs_a/  runs_b/  runs_c/   # config comparison runs
-│   ├── runs_final/                        # 5-seed dev ensemble
+│   ├── runs/  runs_a/  runs_b/  runs_c/   # config comparison runs (development)
+│   ├── runs_final/                        # 5-seed dev ensemble (trained on dev_train)
+│   ├── runs_full/                         # 5-seed final ensemble (trained on official train)
+│   ├── runs_full_val/                     # runs_full re-scored on val (reload check)
+│   ├── runs_full_test/                    # runs_full scored on test
 │   └── figs/                              # evaluation figures
 ├── requirements.txt
 └── README.md
 ```
-
-Rows are in the same order in every file in `data/processed/`. Run all commands from the
-repo root.
 
 ### Data pipeline
 
@@ -64,8 +69,8 @@ and 20% `dev_val` (420), stratified by glaucoma label and race, seed 42. The res
 |---|---|---|
 | `dev_train` | 1,680 | fit the model during development |
 | `dev_val` | 420 | tuning and model selection during development |
-| `val` | 300 | official val, spare sanity check |
-| `test` | 900 | official test, used once at the end |
+| `val` | 300 | official val, sanity check for the final models |
+| `test` | 900 | official test, scored once |
 
 **preprocess.py** cleans and normalizes the maps:
 - Pixels with values -2, -1, or 0 are set to 0 and recorded in a validity mask. These are
@@ -73,8 +78,10 @@ and 20% `dev_val` (420), stratified by glaucoma label and race, seed 42. The res
 - Values are clipped at 400 µm to remove segmentation artifacts (raw max is 1,032 µm).
 - Mean and std are computed on the valid pixels of one fit split only, then applied to all
   rows. Invalid pixels stay 0. The fit split is set with `--fit_col` and `--fit_split`
-  (default: official `train`). The development runs below used `dev_train`
-  (mean 73.04, std 40.23). The fit split is recorded in `norm_stats.json`.
+  (default: official `train`) and is recorded in `norm_stats.json`.
+- Development runs used `dev_train` stats (mean 73.04, std 40.23). Final runs used the
+  official train stats (mean 73.10, std 40.09). Re-run `preprocess.py` with the matching
+  fit split before training or scoring a model.
 
 ### Model code
 
@@ -102,6 +109,12 @@ a metrics file (`.json`).
 | `--seed`, `--out` | seed and output folder |
 | `--final` | required to evaluate on the `test` split |
 
+**predict.py** loads the saved `.pt` weights from a run folder and scores one split, with no
+training. It saves per-seed probabilities in the same format `evaluate.py` and
+`make_figures.py` read, to `<runs>_<split>` by default. Scoring the `test` split requires
+`--final`. Use it to score the test set once, and to check that reloaded weights reproduce
+the training-time results.
+
 ### Evaluation code
 
 **evaluate.py** loads the saved `_probs.npy` files from a run folder and reports, per seed
@@ -117,11 +130,10 @@ by uncertainty quartile, and a probability histogram by true class.
 
 Both take `--runs`, `--split_col`, and `--eval_split`.
 
-### Development results (5 seeds, scored on dev_val)
+### Experiments
 
-Models were trained on `dev_train` and scored on `dev_val` (n=420). Configuration choices
-were made on this set, so these numbers are slightly optimistic. They check the pipeline and
-are not the reported result.
+**Development phase.** Models were trained on `dev_train` and scored on `dev_val` (n=420).
+Configuration choices were made on this set, so its numbers are slightly optimistic.
 
 | Config | Best-epoch AUROC | ECE |
 |---|---|---|
@@ -129,20 +141,64 @@ are not the reported result.
 | b: pretrained, aug, 6 epochs, lr 1e-4 (3 seeds) | 0.849 ± 0.007 | 0.144 |
 | c: pretrained, aug, mask channel, 15 epochs (1 seed) | 0.846 | 0.096 |
 
+Pretrained models overfit quickly and were worse calibrated. The mask channel did not help,
+since invalid pixels are already 0 after normalization.
+
 **Frozen configuration:** ResNet-18 from scratch, RNFLT only (no mask channel), `--aug`,
-15 epochs, lr 3e-4, batch size 32, final-epoch weights (`--save_last`).
+15 epochs, lr 3e-4, batch size 32, final-epoch weights (`--save_last`), 5 seeds.
 
-| Final-epoch results, 5 seeds on dev_val | Single seed (mean ± std) | Ensemble |
-|---|---|---|
-| AUROC | 0.846 ± 0.004 | 0.853 (95% CI 0.810 to 0.889) |
-| ECE | 0.077 ± 0.013 | 0.056 |
-| AUROC, Asian | 0.873 | 0.882 |
-| AUROC, Black | 0.840 | 0.848 |
-| AUROC, White | 0.826 | 0.828 |
+**Final runs.** The frozen configuration was retrained on the official train set (2,100)
+with 5 seeds, then checked on the official val (300) and scored once on the test set (900).
 
-- Race confidence intervals overlap heavily (about 140 patients per race), so the gap is
-  not established on this data.
-- Error rate rises from 3.8% to 42.9% from the most to the least confident quartile. Seed
-  disagreement detects errors with AUROC 0.74.
-- Pretrained models overfit quickly and were worse calibrated. The mask channel did not
-  help, since invalid pixels are already 0 after normalization.
+```
+python scripts/preprocess.py
+python scripts/train.py --epochs 15 --aug --save_last --seed 0 \
+    --split_col split --train_split train --eval_split val --out results/runs_full
+    # repeat for seeds 1 to 4
+python scripts/predict.py --runs results/runs_full --split_col split --eval_split val
+python evaluation/evaluate.py --runs results/runs_full_val --split_col split --eval_split val
+python scripts/predict.py --runs results/runs_full --eval_split test --final
+python evaluation/evaluate.py --runs results/runs_full_test --split_col split --eval_split test
+python evaluation/make_figures.py --runs results/runs_full_test --split_col split --eval_split test
+```
+
+### Results
+
+Ensemble of 5 seeds (trained on the official train set). The test row is the reported
+result. Val was a sanity check and was not used for any tuning.
+
+| Split | AUROC (ensemble) | 95% CI | ECE (ensemble) | AUROC single seed (mean ± std) | ECE single seed |
+|---|---|---|---|---|---|
+| val (n=300) | 0.832 | 0.780 to 0.874 | 0.077 | 0.826 ± 0.003 | 0.097 ± 0.008 |
+| **test (n=900)** | **0.846** | **0.820 to 0.872** | **0.072** | 0.840 ± 0.004 | 0.082 ± 0.013 |
+
+**AUROC by race, test set**
+
+| Race | Ensemble | 95% CI | Single seed (mean ± std) |
+|---|---|---|---|
+| Asian | 0.873 | 0.830 to 0.912 | 0.865 ± 0.004 |
+| White | 0.851 | 0.806 to 0.891 | 0.844 ± 0.010 |
+| Black | 0.798 | 0.748 to 0.851 | 0.792 ± 0.005 |
+
+The worst-to-best gap is 0.075, and Black patients had the lowest AUROC in every seed. The
+Asian and Black confidence intervals overlap slightly, and the cause of the gap is not
+identified. On the val set, with 100 patients per race, the ordering differed and the gap
+was 0.022, so small-sample noise is large there.
+
+**Uncertainty, test set**
+- Ensemble accuracy at a 0.5 threshold is 0.777.
+- Predictive entropy flags wrong predictions with AUROC 0.717, and seed disagreement with
+  0.709. The two correlate at 0.82.
+- Error rate by entropy quartile, from most to least confident: 4.0%, 19.1%, 28.0%, 38.2%.
+
+**Development-phase ensemble** (`runs_final`, trained on `dev_train`, scored on `dev_val`):
+AUROC 0.853 (95% CI 0.810 to 0.889), ECE 0.056, single-seed AUROC 0.846 ± 0.004. The test
+result is slightly lower, as expected for numbers that were not used for any selection.
+
+Figures: `results/figs/evaluation_dashboard_test.png` and the individual panels.
+
+### Rules for this branch
+- Never use `md`, `tds`, or `race` as model inputs (label leakage and shortcut).
+- Compute normalization statistics from training data only.
+- Tune on a validation split. Touch the official test set once, at the end.
+- Report AUROC, ECE, and AUROC per race, with 5 seeds.
