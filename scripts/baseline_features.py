@@ -1,4 +1,4 @@
-import os
+import argparse, os
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
@@ -11,7 +11,11 @@ def get(split):
 
 x_train, m_train = get("train")
 os.makedirs("results/preds", exist_ok=True)
-SPLITS = ["val"]
+
+p = argparse.ArgumentParser()
+p.add_argument("--final", action="store_true", help="also evaluate on test (once, at the end)")
+a = p.parse_args()
+SPLITS = ["val", "test"] if a.final else ["val"]
 
 #  vCDR rule (one feauture), and two RNFL rules (two features)
 for split in SPLITS:
