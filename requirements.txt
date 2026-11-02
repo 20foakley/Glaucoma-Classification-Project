@@ -11,3 +11,4 @@ matplotlib
 umap-learn
 pyyaml
 tqdm
+xgboost
