@@ -42,7 +42,7 @@ Then unzip `dataset.zip` inside `data/raw/harvard_gf/` so the files sit in `Data
 | Rule | Why |
 |---|---|
 | **Never use `md` or `tds` as model inputs.** | The glaucoma label was defined from the visual field test, so these leak the answer. Use them only for analysis (e.g. mild / moderate / severe groups). |
-| **Never use `race` as a model input.** | It is a shortcut (Black patients have a higher glaucoma rate). Use it only for per-group fairness metrics. |
+| **Do not use `race` as a default model input.** | It can act as a shortcut (Black patients have a higher glaucoma rate); use it for per-group fairness metrics. The `mlp_xgboost_tabular_evaluation.ipynb` race-input comparison is an explicitly exploratory exception, not a deployment-ready model. |
 | **Use the official split. Touch `test` once, at the end.** | Avoid leakage and overfitting to the test set. |
 | **Compute normalization stats from training data only.** | Same reason. |
 | **Report AUROC, ECE, and AUROC per race.** | So all models are comparable. Use AUROC (not AUPRC) across races, because glaucoma prevalence differs between groups. |
