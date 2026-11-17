@@ -64,7 +64,7 @@ Run from the repo root. Scripts that import `src` need `PYTHONPATH=.` (or use `p
 | 6. RNFL features | `python scripts/compute_rnflt_features.py` | `rnflt_features.csv` |
 | 7. Scan quality | `python scripts/compute_quality.py` | `quality.csv` |
 | 8. Test dataset class | `python -m scripts.test_dataset` | Shape checks |
-| 9. Feature baselines | `PYTHONPATH=. python scripts/baseline_features.py` | Val metrics, `results/preds/logreg_seed0_val.csv` |
+| 9. Feature baselines | `PYTHONPATH=. python scripts/baseline_features.py` | Val metrics, `results/preds/logreg_{all12,no_age}_seed0_val.csv` |
 
 Steps 5–7 must run before `GFDataset` can be used.
 
