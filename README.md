@@ -4,7 +4,91 @@ CNN baseline for glaucoma vs. no glaucoma on the 2D RNFLT map (200×200 thicknes
 image) from Harvard-GF. Final result: 5-seed ResNet-18 ensemble, test AUROC 0.846
 (95% CI 0.820 to 0.872), ECE 0.072.
 
-### Repository layout (CNN branch)
+The goal is not only to classify glaucoma vs. no glaucoma, but also to answer:
+
+1. **Trust** – when the model combines several inputs (RNFLT map, OCT, tabular features), which one does it rely on for each patient?
+2. **Uncertainty** – how sure is the model, and is that confidence honest (calibration, ECE)?
+3. **Fairness** – does it work equally well for Asian, Black, and White patients?
+
+---
+
+## Dataset: Harvard-GF
+
+- 3,300 patients, one eye each, one `.npz` file per patient.
+- Official split (from `ReadMe/data_summary.csv`, column `use`): **train 2,100 / val 300 / test 900**.
+- Glaucoma rate ≈ 52% / 59% / 54% (train / val / test), so classes are roughly balanced.
+- No fundus photos. Each file contains:
+
+| Key | Shape | Meaning |
+|---|---|---|
+| `oct_bscans` | (200, 200, 200) uint8 | 3D OCT volume. **B-scans = axis 0, depth = axis 1** |
+| `rnflt` | (200, 200) float | RNFL thickness map (µm) |
+| `md` | scalar | Visual field mean deviation |
+| `tds` | (52,) | Visual field total deviation values |
+| `glaucoma` | scalar | Label (1 = glaucoma) |
+| `race`, `male`, `hispanic`, `language`, `maritalstatus`, `age` | scalar | Demographics |
+
+Download (requires a Hugging Face account and accepting the dataset terms):
+
+```bash
+hf auth login
+hf download harvardairobotics/Harvard-GF --repo-type dataset --local-dir data/raw/harvard_gf
+```
+
+Then unzip `dataset.zip` inside `data/raw/harvard_gf/` so the files sit in `Dataset/Training/`, `Dataset/Validation/`, `Dataset/Test/`.
+
+---
+
+## Rules every model must follow
+
+| Rule | Why |
+|---|---|
+| **Never use `md` or `tds` as model inputs.** | The glaucoma label was defined from the visual field test, so these leak the answer. Use them only for analysis (e.g. mild / moderate / severe groups). |
+| **Do not use `race` as a default model input.** | It can act as a shortcut (Black patients have a higher glaucoma rate); use it for per-group fairness metrics. The `mlp_xgboost_tabular_evaluation.ipynb` race-input comparison is an explicitly exploratory exception, not a deployment-ready model. |
+| **Use the official split. Touch `test` once, at the end.** | Avoid leakage and overfitting to the test set. |
+| **Compute normalization stats from training data only.** | Same reason. |
+| **Report AUROC, ECE, and AUROC per race.** | So all models are comparable. Use AUROC (not AUPRC) across races, because glaucoma prevalence differs between groups. |
+| **Train 5 seeds per model (deep ensemble).** | Ensemble disagreement is our uncertainty estimate. |
+
+---
+
+## Setup
+
+Python 3.11 (the macOS system Python 3.9 is too old for current PyTorch).
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+---
+
+## Pipeline
+
+Run from the repo root.
+
+| Step | Command | Output |
+|---|---|---|
+| 1. Inspect raw files | `python scripts/inspect_data.py` | Keys, shapes, dtypes, CSV summary |
+| 2. Visualize OCT axes | `python scripts/view_oct.py` | `results/oct_axes.png`, `results/oct_mean_projections.png` |
+| 3. Preprocess (≈40 s) | `python scripts/preprocess.py` | `data/processed/` |
+| 4. Check RNFLT values | `python scripts/check_rnflt.py` | Percentiles, `results/rnflt_negative_codes.png` |
+| 5. Cup-to-disc ratio | `python scripts/compute_cdr.py` |  |
+
+### Processed files (`data/processed/`)
+
+| File | Shape | Content |
+|---|---|---|
+| `rnflt.npy` | (3300, 200, 200) float32 | RNFLT maps (raw values, cleaned at load time) |
+| `oct_slices.npy` | (3300, 16, 200, 200) uint8 | 16 evenly spaced B-scans per patient |
+| `oct_enface.npy` | (3300, 200, 200) float32 | En-face image (OCT averaged over depth) |
+| `tds.npy` | (3300, 52) float32 | Visual field values (**analysis only**) |
+| `meta.csv` | 3300 rows | Demographics, `md`, `label`, `split` (`train` / `val` / `test`) |
+
+Rows are in the same order in every file.
+
+## Repository layout
 
 ```
 ├── data/                       # NOT in git
