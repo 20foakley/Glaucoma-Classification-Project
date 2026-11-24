@@ -1,0 +1,27 @@
+{
+ "args": {
+  "seed": 0,
+  "epochs": 1,
+  "bs": 8,
+  "lr": 0.0003,
+  "wd": 0.0001,
+  "arch": "r3d_18",
+  "size": 64,
+  "pretrained": false,
+  "aug": true,
+  "save_last": false,
+  "split_col": "dev_split",
+  "train_split": "dev_train",
+  "eval_split": "dev_val",
+  "final": false,
+  "out": "results/runs3d_smoke"
+ },
+ "best_epoch": 0,
+ "metrics": {
+  "auroc": 0.7761912328891512,
+  "ece": 0.1235783437533038,
+  "auroc_Asian": 0.7891072891072892,
+  "auroc_Black or African American": 0.8010695187165775,
+  "auroc_White or Caucasian": 0.7236895986895986
+ }
+}
