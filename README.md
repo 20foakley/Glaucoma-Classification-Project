@@ -281,6 +281,69 @@ result is slightly lower, as expected for numbers that were not used for any sel
 
 Figures: `results/figs/evaluation_dashboard_test.png` and the individual panels.
 
+### Tabular MLP vs. XGBoost
+
+The exploratory tabular comparison uses nine RNFLT-derived features, with and without
+age, and a single MLP and XGBoost fit per feature set. Models use the official train
+split; validation is used for early stopping, and the official test split is reserved
+for final scoring. These results are not a 5-seed ensemble and should not be compared
+as if they had the same evaluation protocol as the CNN results above.
+
+**Overall test results** (900 patients; 489 glaucoma cases; AUROC confidence intervals
+are stratified bootstrap percentile intervals):
+
+| Model | Features | AUROC | 95% CI | ECE (10 bins) | Accuracy at 0.5 |
+|---|---|---:|---|---:|---:|
+| MLP | RNFLT + age | **0.849** | 0.824 to 0.873 | **0.035** | 0.771 |
+| XGBoost | RNFLT + age | 0.847 | 0.820 to 0.870 | 0.051 | 0.761 |
+| MLP | RNFLT only | 0.832 | 0.804 to 0.857 | 0.043 | 0.756 |
+| XGBoost | RNFLT only | 0.830 | 0.803 to 0.855 | 0.039 | 0.767 |
+
+The two algorithms have very similar overall test AUROC for either feature set; the
+confidence intervals overlap substantially, so this run does not show a clear winner.
+Adding age is associated with higher overall test AUROC in both models in this split
+(about 0.017), but the change is not consistent across race groups and does not establish
+a causal benefit from age.
+
+**Test AUROC by race** (300 patients per group):
+
+| Race | MLP, RNFLT + age | XGBoost, RNFLT + age | MLP, RNFLT only | XGBoost, RNFLT only |
+|---|---:|---:|---:|---:|
+| White | 0.880 (0.840–0.915) | 0.886 (0.844–0.920) | 0.847 (0.800–0.888) | 0.858 (0.810–0.897) |
+| Black | 0.793 (0.741–0.840) | 0.791 (0.741–0.839) | 0.797 (0.747–0.847) | 0.793 (0.743–0.843) |
+| Asian | 0.875 (0.833–0.914) | 0.870 (0.827–0.908) | 0.849 (0.802–0.891) | 0.835 (0.784–0.879) |
+
+Black-group AUROC is lower than White and Asian AUROC for all four configurations.
+This is a subgroup performance difference that warrants further study, not an explanation
+of its cause; confidence intervals also indicate uncertainty in these subgroup estimates.
+
+The evaluation notebook writes `mlp_xgboost_results.csv` (aggregate metrics and intervals)
+and `mlp_xgboost_predictions.csv` (row-level validation/test probabilities and labels) in
+the repository root.
+
+### CNN + tabular embedding fusion
+
+`evaluation/mlp_cnn_fusion.ipynb` freezes the seed-0 ResNet-18 from `results/runs_full`,
+extracts its 512-dimensional image embeddings, and concatenates them with a learned MLP
+embedding of age and nine RNFLT-derived features. The fusion head is trained on the official
+train split, with median imputation and standardization fit on train only. The best epoch
+is selected by official validation loss. Race is used only for subgroup metrics.
+
+| Split | Overall AUROC | 95% CI | ECE (10 bins) |
+|---|---:|---|---:|
+| Validation (n=300) | 0.825 | 0.777 to 0.869 | 0.065 |
+| Test (n=900) | 0.846 | 0.820 to 0.870 | 0.031 |
+
+Test AUROC was 0.881 for White patients, 0.784 for Black patients, and 0.877 for Asian
+patients (300 patients per group). This single-seed, frozen-encoder experiment did not
+demonstrate a clear overall AUROC gain over the standalone models. The official test set
+has already been evaluated in prior CNN experiments, so these fusion test metrics are
+exploratory, not an untouched confirmation.
+
+Running the notebook writes `mlp_cnn_fusion.pt` (including tabular preprocessing
+parameters), `mlp_cnn_fusion_results.csv`, and `mlp_cnn_fusion_predictions.csv` to the
+repository root.
+
 ### Rules for this branch
 - Never use `md`, `tds`, or `race` as model inputs (label leakage and shortcut).
 - Compute normalization statistics from training data only.

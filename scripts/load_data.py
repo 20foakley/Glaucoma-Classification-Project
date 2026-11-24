@@ -10,8 +10,10 @@ def load_data():
 
     meta = pd.read_csv(DATA_DIR / "meta.csv")
     rnflt = pd.read_csv(DATA_DIR / "rnflt_features.csv")
+    if "filename" not in meta.columns and "file" in meta.columns:
+        meta = meta.rename(columns={"file": "filename"})
     if "filename" not in meta.columns or "filename" not in rnflt.columns:
-        raise ValueError("Both CSV files must contain filename for row alignment.")
+        raise ValueError("meta.csv and rnflt_features.csv must contain filename (or file in meta.csv) for row alignment.")
     data = meta.merge(rnflt, on="filename", how="inner", validate="one_to_one")
     if len(data) != len(meta) or len(data) != len(rnflt):
         raise ValueError("Metadata and RNFLT feature filenames/counts do not match.")
@@ -25,10 +27,15 @@ def load_data():
     }
     for columns in feature_sets.values():
         data[columns] = data[columns].apply(pd.to_numeric, errors="coerce")
-    data["label"] = data["glaucoma"].astype(str).str.strip().str.lower().map({"no": 0, "yes": 1})
-    data["race"] = data["race"].astype(str).str.strip().str.lower()
-    if data["label"].isna().any():
-        raise ValueError("glaucoma must contain only 'yes' and 'no'.")
+    labels = data["glaucoma"].astype(str).str.strip().str.lower().replace({"no": "0", "yes": "1"})
+    data["label"] = pd.to_numeric(labels, errors="coerce")
+    data["race"] = data["race"].astype(str).str.strip().str.lower().replace({
+        "white or caucasian": "white",
+        "black or african american": "black",
+    })
+    if data["label"].isna().any() or not data["label"].isin([0, 1]).all():
+        raise ValueError("glaucoma must contain only binary 0/1 or 'yes'/'no' labels.")
+    data["label"] = data["label"].astype(int)
     if "split" in data.columns:
         data["split"] = data["split"].astype(str).str.strip().str.lower().replace({"validation": "val"})
     elif "use" in data.columns:
