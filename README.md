@@ -340,6 +340,24 @@ demonstrate a clear overall AUROC gain over the standalone models. The official 
 has already been evaluated in prior CNN experiments, so these fusion test metrics are
 exploratory, not an untouched confirmation.
 
+**Direct comparison with the tabular MLP using RNFLT + age** uses predictions aligned
+by filename, split, race, and label (all 900 test and 300 validation rows matched):
+
+| Split | Model | AUROC | Accuracy at 0.5 | ECE (10 bins) | Brier score |
+|---|---|---:|---:|---:|---:|
+| Validation | MLP, RNFLT + age | 0.826 | 0.763 | 0.040 | 0.1653 |
+| Validation | CNN + MLP fusion | 0.825 | 0.753 | 0.065 | 0.1655 |
+| Test | MLP, RNFLT + age | 0.849 | 0.771 | 0.035 | 0.1559 |
+| Test | CNN + MLP fusion | 0.846 | 0.776 | 0.031 | 0.1564 |
+
+On test data, fusion's AUROC difference was -0.0032 (paired bootstrap 95% CI:
+-0.0100 to 0.0036), which does not establish a clear difference. Fusion improved
+accuracy by 0.4 percentage points and ECE by 0.0036, while its Brier score was
+slightly worse. Predicted classes agreed for 870 of 900 test patients. These metrics
+are exploratory because the official test set has already informed prior model
+evaluation; they should not be treated as confirmatory evidence of comparative
+performance.
+
 Running the notebook writes `mlp_cnn_fusion.pt` (including tabular preprocessing
 parameters), `mlp_cnn_fusion_results.csv`, and `mlp_cnn_fusion_predictions.csv` to the
 repository root.
