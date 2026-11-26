@@ -66,7 +66,37 @@ Run from the repo root. Scripts that import `src` need `PYTHONPATH=.` (or use `p
 | 8. Test dataset class | `python -m scripts.test_dataset` | Shape checks |
 | 9. Feature baselines | `PYTHONPATH=. python scripts/baseline_features.py` | Val metrics, `results/preds/logreg_{all12,no_age}_seed0_val.csv` |
 
+| 10. Train one model, one seed | `PYTHONPATH=. python scripts/train_fusion.py --fusion single --branches rnflt --seed 0` | `results/preds/single_rnflt_seed0_{val,test}.csv`, `results/checkpoints/single_rnflt_seed0.pt` |
+| 11. Late fusion | `python scripts/late_fusion.py --inputs single_rnflt single_tab --name late_rnflt+tab` | `results/preds/late_rnflt+tab_seed{k}_{val,test}.csv` |
+| 12. Results table | `PYTHONPATH=. python scripts/summarize.py --ref single_tab --out results/summary_ref_tab.csv` | One row per model: AUROC with 95% CI, ECE, per-race AUROC, paired test vs `--ref` |
+
 Steps 5–7 must run before `GFDataset` can be used.
+
+### Fusion pipeline (steps 10–12)
+
+Every model is trained with `train_fusion.py`, so models with different inputs and fusion heads use the same data, split, recipe, output format and evaluation.
+
+| File | What it does |
+|---|---|
+| `src/models/branch_encoders.py` | One encoder per input: ResNet-18 from scratch for `rnflt` (1 channel), MLP for `tab` (12 features) |
+| `src/models/fusion.py` | `FusionModel`: the encoders plus a fusion head (`single` so far; `gmu` and `concat` are next) |
+| `scripts/train_fusion.py` | Trains encoders and head end to end for one seed; writes val/test predictions and a checkpoint |
+| `scripts/late_fusion.py` | Averages the probabilities of already trained models, seed by seed |
+| `scripts/summarize.py` | Seed mean ± SD, seed-ensemble AUROC with 95% bootstrap CI, ECE, per-race AUROC, paired bootstrap test against `--ref` |
+
+Training recipe (same for every model, from the 2D RNFLT CNN): AdamW, lr 3e-4, weight decay 1e-4, cosine schedule stepped per epoch, batch 32, 15 epochs, **last epoch kept** (val is only monitored, it never picks the model), random shifts of up to 8 px for images (no flips or rotations). `--early_stop` keeps the best-val epoch instead.
+
+Run 5 seeds of each model, then late fusion and the summary:
+
+```bash
+for s in 0 1 2 3 4; do
+  PYTHONPATH=. python scripts/train_fusion.py --fusion single --branches rnflt --seed $s
+  PYTHONPATH=. python scripts/train_fusion.py --fusion single --branches tab   --seed $s
+done
+python scripts/late_fusion.py --inputs single_rnflt single_tab --name late_rnflt+tab
+PYTHONPATH=. python scripts/summarize.py --ref single_tab   --out results/summary_ref_tab.csv
+PYTHONPATH=. python scripts/summarize.py --ref single_rnflt --out results/summary_ref_rnflt.csv
+```
 
 ### Processed files (`data/processed/`)
 
@@ -114,7 +144,38 @@ Each item also returns `label`, `race`, `md`, `zero_frac`, `filename`; `race` an
 | Logistic regression (12 features) | 0.781 | 0.087 | 0.809 / 0.776 / 0.790 |
 | Logistic regression (no age) | 0.784 | 0.098 | 0.790 / 0.773 / 0.801 |
 
-Val AUROC is noisy (±≈0.05); test is evaluated once at the end.
+Val AUROC is noisy (±≈0.05).
+
+## Results (test, n = 900)
+
+From `results/summary_ref_tab.csv` and `results/summary_ref_rnflt.csv`. Deep models: 5 seeds each. "Ensemble" averages the 5 seeds' probabilities; CIs are 95% percentile bootstrap (2000 resamples).
+
+| Model | Ensemble AUROC [95% CI] | ECE | Test AUROC, seed mean ± SD | Val AUROC, seed mean |
+|---|---|---|---|---|
+| Logistic regression (12 features) | 0.821 [0.794, 0.848] | 0.063 | – | 0.781 |
+| Logistic regression (no age) | 0.808 [0.779, 0.836] | 0.070 | – | 0.784 |
+| `single_rnflt` (ResNet-18 on RNFLT) | 0.842 [0.815, 0.867] | 0.069 | 0.835 ± 0.005 | 0.826 |
+| `single_tab` (MLP on 12 features) | 0.844 [0.818, 0.868] | 0.074 | 0.842 ± 0.003 | 0.808 |
+| **`late_rnflt+tab`** (average of the two) | **0.864 [0.840, 0.887]** | **0.042** | 0.861 ± 0.002 | 0.843 |
+
+Paired bootstrap tests (same 900 patients):
+
+| Comparison | AUROC difference [95% CI] | p |
+|---|---|---|
+| late fusion − `single_tab` | +0.020 [+0.004, +0.036] | 0.016 |
+| late fusion − `single_rnflt` | +0.022 [+0.013, +0.032] | < 0.001 |
+| `single_tab` − `single_rnflt` | +0.002 [−0.022, +0.028] | 0.87 |
+| logistic regression (12) − `single_tab` | −0.023 [−0.037, −0.010] | 0.002 |
+
+AUROC by race (ensemble, test):
+
+| Model | Asian | Black | White |
+|---|---|---|---|
+| `single_rnflt` | 0.866 | 0.787 | 0.852 |
+| `single_tab` | 0.880 | 0.790 | 0.868 |
+| `late_rnflt+tab` | 0.892 [0.854, 0.926] | 0.803 [0.753, 0.849] | 0.885 [0.847, 0.918] |
+
+Late fusion beats both single-input models and is the best calibrated, but every model is weakest for Black patients, and fusion does not close that gap.
 
 ## Repository layout
 
@@ -131,7 +192,7 @@ GRAFT-Glaucoma/
 │   └── utils/            # calibration, fairness helpers
 ├── configs/         # experiment configs (YAML)
 ├── notebooks/       # exploration (clear outputs before committing)
-├── results/         # figures; preds/ (git-ignored) holds per-patient predictions
+├── results/         # figures, summary_ref_*.csv; preds/ and checkpoints/ are git-ignored
 ├── weights/         # NOT in git: pretrained weights (e.g. RETFound)
 └── requirements.txt
 ```
